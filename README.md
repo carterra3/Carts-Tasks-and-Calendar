@@ -1,13 +1,13 @@
 # Cart's Tasks and Calendar
 
+This is a vibecoded app that adds functionality that I like, the way that I want it. I hope it's useful to someone else, but if not, no worries. The remainder of this readme is Claude.
+
 A calendar, task manager and address book for [Omarchy](https://omarchy.org),
 built on its own shell, so it looks and feels like the rest of your desktop
 and follows your theme.
 
-<!-- Screenshots: save them in docs/screenshots/ and uncomment.
 ![Week view with tasks](docs/screenshots/week.png)
 ![Tasks](docs/screenshots/tasks.png)
--->
 
 It comes in two parts that share everything:
 
@@ -289,13 +289,6 @@ For example, bind a key to `carts --new-task`, or to
 - Tasks can't be dragged to reorder within a list.
 - Contacts: no groups, no editing photos (existing ones are kept), and
   birthdays don't show on the calendar.
-
-## Contributing
-
-Bug reports and pull requests are welcome. See
-[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for how it's put together and how
-to run the tests, and `python3 tools/demo.py` to try it on made-up data.
-
 ## License
 
 [MIT](LICENSE)
