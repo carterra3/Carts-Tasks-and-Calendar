@@ -495,6 +495,14 @@ error message, or nothing when the task was added).
 
 All of them use temporary data and remove their test keyring entries.
 
+## Demo data
+
+`python3 tools/demo.py` opens the app on made-up calendars and tasks dated
+around today, in a temporary data folder, for screenshots or a test drive.
+Add `--radicale <python with radicale>` for demo contacts from a throwaway
+local server. Close the window to end it; nothing of yours is read or
+changed. Quit the app first (`carts --quit`).
+
 ## Known limits
 
 - Remote repeating events are only expanded within the sync window (120 days
