@@ -1,0 +1,135 @@
+{
+ "version": 1,
+ "accounts": [
+  {
+   "id": "acc-qml",
+   "provider": "caldav",
+   "server": "@BASE@",
+   "username": "qml"
+  }
+ ],
+ "calendars": [
+  {
+   "id": "cal-local",
+   "name": "Local",
+   "color": "theme:green",
+   "visible": true,
+   "source": {
+    "type": "local"
+   }
+  },
+  {
+   "id": "cal-work",
+   "name": "Work",
+   "color": "theme:blue",
+   "visible": true,
+   "source": {
+    "type": "caldav",
+    "accountId": "acc-qml",
+    "url": "@BASE@qml/work/"
+   }
+  },
+  {
+   "id": "cal-fam",
+   "name": "Family",
+   "color": "theme:magenta",
+   "visible": true,
+   "source": {
+    "type": "local"
+   }
+  }
+ ],
+ "events": [
+  {
+   "uid": "t1",
+   "calendarId": "cal-fam",
+   "title": "Lake trip",
+   "start": "2026-10-16",
+   "end": "2026-10-20",
+   "allDay": true
+  },
+  {
+   "uid": "t2",
+   "calendarId": "cal-local",
+   "title": "Conference",
+   "start": "2026-10-21",
+   "end": "2026-10-23",
+   "allDay": true
+  },
+  {
+   "uid": "t3",
+   "calendarId": "cal-local",
+   "title": "Red-eye to SEA",
+   "start": "2026-10-22T22:30",
+   "end": "2026-10-23T06:10",
+   "allDay": false
+  },
+  {
+   "uid": "t4",
+   "calendarId": "cal-fam",
+   "title": "Grandma visiting",
+   "start": "2026-10-23T15:00",
+   "end": "2026-10-27T11:00",
+   "allDay": false
+  },
+  {
+   "uid": "t5",
+   "calendarId": "cal-local",
+   "title": "Dentist",
+   "start": "2026-10-20T08:30",
+   "end": "2026-10-20T09:30",
+   "allDay": false
+  },
+  {
+   "uid": "t6",
+   "calendarId": "cal-local",
+   "title": "1:1 with Sam",
+   "start": "2026-10-20T13:00",
+   "end": "2026-10-20T13:30",
+   "allDay": false
+  },
+  {
+   "uid": "t7",
+   "calendarId": "cal-fam",
+   "title": "Soccer practice",
+   "start": "2026-10-20T17:30",
+   "end": "2026-10-20T19:00",
+   "allDay": false
+  },
+  {
+   "uid": "t8",
+   "calendarId": "cal-local",
+   "title": "Code review",
+   "start": "2026-10-20T15:00",
+   "end": "2026-10-20T16:00",
+   "allDay": false
+  },
+  {
+   "uid": "t9",
+   "calendarId": "cal-fam",
+   "title": "Pumpkin carving",
+   "start": "2026-10-31",
+   "end": "2026-10-31",
+   "allDay": true
+  },
+  {
+   "uid": "s1",
+   "calendarId": "cal-local",
+   "title": "Standup",
+   "start": "2026-10-05T09:00",
+   "end": "2026-10-05T09:15",
+   "allDay": false,
+   "rrule": "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR"
+  },
+  {
+   "uid": "s2",
+   "calendarId": "cal-fam",
+   "title": "Trash day",
+   "start": "2026-01-07",
+   "end": "2026-01-07",
+   "allDay": true,
+   "rrule": "FREQ=WEEKLY;BYDAY=WE"
+  }
+ ],
+ "prefs": {}
+}

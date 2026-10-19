@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "id": "carterra3.carts",
+  "name": "Carts",
+  "version": "0.5.0",
+  "author": "carterra3",
+  "license": "MIT",
+  "description": "Carts Tasks and Calendar for Omarchy: a clock replacement with a pop-out calendar, plus a standalone app (month/week/day/agenda/year, time zones, repeating events, drag to edit, CardDAV contacts), theme-colored calendars, and sync with links and CalDAV accounts",
+  "kinds": [
+    "bar-widget",
+    "service"
+  ],
+  "entryPoints": {
+    "barWidget": "BarWidget.qml",
+    "service": "Service.qml"
+  },
+  "barWidget": {
+    "displayName": "Carts",
+    "description": "Date/time label with a calendar and agenda popup",
+    "category": "Time",
+    "allowMultiple": false,
+    "defaultSection": "center",
+    "defaults": {
+      "format": "dddd HH:mm"
+    },
+    "schema": [
+      {
+        "key": "format",
+        "type": "string",
+        "label": "Format"
+      },
+      {
+        "key": "formatAlt",
+        "type": "string",
+        "label": "Alternate format"
+      }
+    ]
+  }
+}
