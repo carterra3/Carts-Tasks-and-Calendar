@@ -184,7 +184,9 @@ def run_suite(tmp, rad, suite):
 
 
 def main(argv):
-    suites = argv or sorted(os.path.splitext(os.path.basename(p))[0] for p in glob.glob(os.path.join(SUITES, "*.qml")))
+    # tasks_*.qml need their own server setup: tests/run_qml_tasks.py.
+    suites = argv or sorted(os.path.splitext(os.path.basename(p))[0] for p in glob.glob(os.path.join(SUITES, "*.qml"))
+                            if not os.path.basename(p).startswith("tasks_"))
     if not shutil.which("quickshell"):
         print("quickshell not found")
         return 2

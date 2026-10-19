@@ -1,6 +1,6 @@
 # Security model
 
-Carts talks to servers you configure (CalDAV, CardDAV, ICS links) and keeps
+Cart's Tasks and Calendar talks to servers you configure (CalDAV, CardDAV, ICS links) and keeps
 account passwords and private calendar links. This is what the sync helper
 (`sync/calsync.py`) does to keep them safe.
 

@@ -26,6 +26,9 @@ Panel {
   property var hostWidget: null
   property var service: null
   readonly property var store: service ? service.store : null
+  readonly property var taskStore: service ? service.taskStore : null
+  // Settings → "Tasks in the bar popup": "off" | "list" | "calendar"
+  readonly property string popupTasks: store ? store.pref("popupTasks", "list") : "list"
   readonly property var barIdentity: hostWidget || root
 
   readonly property bool use24h: hostWidget ? hostWidget.use24h : true
@@ -145,6 +148,7 @@ Panel {
   }
 
   function openEditEvent(ev) {
+    if (ev && ev.taskRef) { openTask(ev.taskRef); return }
     root.mode = "event"
     eventEditor.openEdit(ev)
   }
@@ -161,8 +165,14 @@ Panel {
       return
     }
     store.moveEvent(ev, changed, function(err) {
-      if (err) { root.mode = "event"; eventEditor.openEdit(ev); eventEditor.formError = err }
+      if (err && !ev.taskRef) { root.mode = "event"; eventEditor.openEdit(ev); eventEditor.formError = err }
     })
+  }
+
+  // Tasks open in the app (the popup has no task editor).
+  function openTask(key) {
+    root.close()
+    if (root.service) root.service.openTask(key)
   }
 
   function openHidden() {
@@ -553,6 +563,20 @@ Panel {
         fg: root.fg
         fontFamily: root.fontFamily
         onEventPicked: function(ev) { root.openEditEvent(ev) }
+      }
+
+      PopupTasks {
+        visible: root.popupTasks !== "off" && root.taskStore !== null && root.taskStore.lists.length > 0
+        width: parent.width
+        store: root.taskStore
+        dayKey: root.cursorKey
+        todayKey: root.todayKey
+        use24h: root.use24h
+        fg: root.fg
+        fontFamily: root.fontFamily
+        onOpenRequested: function(key) { root.openTask(key) }
+        onOpenAllRequested: { root.close(); if (root.service) root.service.openTasksWindow() }
+        onNewRequested: { root.close(); if (root.service) root.service.newTaskWindow() }
       }
 
       Item { visible: !root.compact; width: 1; height: Style.space(4) }

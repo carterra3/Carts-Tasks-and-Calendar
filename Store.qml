@@ -29,6 +29,8 @@ Item {
   readonly property string statusPath: dataDir + "/remote-status.json"
   readonly property string contactsPath: dataDir + "/contacts.json"
   readonly property string helperPath: decodeURIComponent(String(Qt.resolvedUrl("sync/calsync.py")).replace(/^file:\/\//, ""))
+  readonly property string importerPath: decodeURIComponent(String(Qt.resolvedUrl("sync/importer.py")).replace(/^file:\/\//, ""))
+  readonly property string tasksPath: dataDir + "/tasks.json"
 
   property int syncMinutes: 15
 
@@ -84,6 +86,11 @@ Item {
   // which go through the editor to ask which occurrences).
   function moveEvent(ev, changed, callback) {
     var done = callback || function() {}
+    if (ev && ev.taskRef) {
+      if (root.taskHandler) root.taskHandler.moveTask(ev, changed, done)
+      else done("Tasks are not available here")
+      return
+    }
     if (!eventEditable(ev)) { done("This event is read-only"); return }
     changed.updated = new Date().toISOString()
     var remote = isRemote(ev.calendarId)
@@ -94,9 +101,27 @@ Item {
     })
   }
   readonly property var allEvents: Events.withoutHidden(rawEvents, hidden)
+
+  // Tasks shown on the calendar: event-shaped stand-ins made by the task
+  // store (TaskEvents.js), each with `taskRef` set, plus one pseudo calendar
+  // per task list ("tasks:<listId>") for their colors. Whoever owns this
+  // store decides whether to fill these (the app and the popup each have a
+  // setting); empty means no tasks on the calendar.
+  property var taskEvents: []
+  property var taskCalendars: []
+  // { moveTask(ev, changed, done), openTask(ev) } from the owner, for drags
+  // and clicks on a task in the views.
+  property var taskHandler: null
+  function taskCalendarById(id) {
+    for (var i = 0; i < taskCalendars.length; i++) if (taskCalendars[i].id === id) return taskCalendars[i]
+    return null
+  }
+
   // Visible events by day, built once per change; views look their days up
   // here instead of scanning every event (see Events.buildIndex).
-  readonly property var dayIndex: Events.buildIndex(allEvents, calendars)
+  readonly property var dayIndex: taskEvents.length
+    ? Events.buildIndex(allEvents.concat(taskEvents), calendars.concat(taskCalendars))
+    : Events.buildIndex(allEvents, calendars)
   function eventsOn(key) { return Events.eventsOn(dayIndex, key) }
 
   // Hidden synced events (see Events.js "Hidden events"). Stored in
@@ -181,6 +206,7 @@ Item {
 
   function eventEditable(ev) {
     if (!ev) return false
+    if (ev.taskRef) return !!ev.taskEditable && !!root.taskHandler
     if (ev.readOnly) return false
     return calendarWritable(ev.calendarId)
   }
@@ -231,7 +257,7 @@ Item {
   }
 
   function calendarColor(id) {
-    var cal = calendarById(id)
+    var cal = calendarById(id) || (String(id).indexOf("tasks:") === 0 ? taskCalendarById(id) : null)
     return cal ? colorFor(cal.color) : themeFallback
   }
 
@@ -541,7 +567,7 @@ Item {
   function addSubscription(name, url, color, callback) {
     var id = Events.newId("cal")
     var clean = String(url || "").trim()
-    runHelper(["set-secret"], { key: "ics:" + id, value: clean, label: "Carts link: " + name }, function(res) {
+    runHelper(["set-secret"], { key: "ics:" + id, value: clean, label: "Cart's Tasks and Calendar link: " + name }, function(res) {
       if (!res.ok) { callback(res); return }
       var cal = { id: id, name: name, color: color, visible: true, source: { type: "ics", label: root.linkLabel(clean) } }
       root.calendars = root.calendars.concat([cal])
@@ -556,7 +582,7 @@ Item {
   function replaceSubscriptionUrl(id, url, callback) {
     var cal = calendarById(id)
     var clean = String(url || "").trim()
-    runHelper(["set-secret"], { key: "ics:" + id, value: clean, label: "Carts link: " + (cal ? cal.name : id) }, function(res) {
+    runHelper(["set-secret"], { key: "ics:" + id, value: clean, label: "Cart's Tasks and Calendar link: " + (cal ? cal.name : id) }, function(res) {
       if (!res.ok) { callback(res); return }
       var src = {}
       for (var k in cal.source) src[k] = cal.source[k]
@@ -605,6 +631,41 @@ Item {
     return added.length
   }
 
+  // ---- Accounts are shared by calendars, address books and task lists
+  // (tasks.json, read here only for which accounts its lists use).
+  property var taskAccountIds: []
+  function applyTasksFile(raw) {
+    try {
+      var d = JSON.parse(raw)
+      var ids = []
+      ;(d && Array.isArray(d.lists) ? d.lists : []).forEach(function(l) {
+        var a = l && l.source && l.source.accountId
+        if (a && ids.indexOf(a) === -1) ids.push(a)
+      })
+      root.taskAccountIds = ids
+    } catch (e) { /* keep the last good copy */ }
+  }
+  // taskIds: the task lists' account ids when the caller knows better than
+  // tasks.json on disk (a task store that has not saved yet).
+  function accountInUse(accId, taskIds) {
+    return root.calendars.some(function(c) { return c.source && c.source.accountId === accId })
+      || root.addressBooks.some(function(b) { return b.accountId === accId })
+      || (taskIds || root.taskAccountIds).indexOf(accId) !== -1
+  }
+  // Add an account record (no secret: the helper stored it on sign-in).
+  function ensureAccount(accountId, acc) {
+    if (!accountId || accountById(accountId) || !acc) return
+    root.accounts = root.accounts.concat([{ id: accountId, provider: acc.provider || "caldav", server: acc.server || "", username: acc.username || "" }])
+    save()
+  }
+  // Drop an account nothing uses any more, with its keyring password.
+  function releaseAccount(accId, taskIds) {
+    if (!accId || !accountById(accId) || accountInUse(accId, taskIds)) return
+    root.accounts = root.accounts.filter(function(a) { return a.id !== accId })
+    save()
+    runHelper(["forget"], { calendarIds: [], secretKeys: ["account:" + accId] }, null)
+  }
+
   // Sign-in succeeded but the user backed out: drop the stored password.
   function abandonAccount(accountId) {
     if (accountById(accountId)) return
@@ -645,9 +706,7 @@ Item {
     root.hidden = root.hidden.filter(function(h) { return h.calendarId !== id })
     if (type === "caldav") {
       var accId = cal.source.accountId
-      var stillUsed = root.calendars.some(function(c) { return c.source && c.source.accountId === accId })
-        || root.addressBooks.some(function(b) { return b.accountId === accId })
-      if (!stillUsed) {
+      if (!accountInUse(accId)) {
         root.accounts = root.accounts.filter(function(a) { return a.id !== accId })
         secrets.push("account:" + accId)
       }
@@ -888,10 +947,14 @@ Item {
   Process {
     id: mkdir
     command: ["sh", "-c",
-      'mkdir -p "$1/backups" && chmod 700 "$1" "$1/backups" && chmod 600 "$1"/*.json "$1"/backups/*.json 2>/dev/null; true',
-      "sh", root.dataDir]
+      'mkdir -p "$1/backups" && chmod 700 "$1" "$1/backups" && chmod 600 "$1"/*.json "$1"/backups/*.json 2>/dev/null; '
+      // First start: bring data over from the separate Calendar / Tasks
+      // apps (sync/importer.py; runs once, never changes the old data).
+      + 'python3 "$2" >/dev/null 2>&1; true',
+      "sh", root.dataDir, root.importerPath]
     running: true
     onExited: {
+      tasksFile.path = root.tasksPath
       dataFile.path = root.dataPath
       remoteFile.path = root.remotePath
       statusFile.path = root.statusPath
@@ -1077,9 +1140,7 @@ Item {
     if (!book) return
     root.addressBooks = root.addressBooks.filter(function(b) { return b.id !== id })
     var secrets = []
-    var used = root.calendars.some(function(c) { return c.source && c.source.accountId === book.accountId })
-      || root.addressBooks.some(function(b) { return b.accountId === book.accountId })
-    if (!used) {
+    if (!accountInUse(book.accountId)) {
       root.accounts = root.accounts.filter(function(a) { return a.id !== book.accountId })
       secrets.push("account:" + book.accountId)
     }
@@ -1113,6 +1174,14 @@ Item {
       if (err) { done(err); return }
       root.deleteContact(contact, function(err2) { done(err2 ? "Copied, but could not remove the original: " + err2 : "", saved) })
     })
+  }
+
+  FileView {
+    id: tasksFile
+    watchChanges: true
+    printErrors: false
+    onLoaded: root.applyTasksFile(text())
+    onFileChanged: reload()
   }
 
   FileView {

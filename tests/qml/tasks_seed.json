@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "accounts": [],
+  "lists": [
+    { "id": "list-inbox", "name": "Inbox", "color": "theme:blue", "visible": true, "source": { "type": "local" } }
+  ],
+  "tasks": [
+    { "uid": "T-1", "listId": "list-inbox", "title": "Write report", "status": "NEEDS-ACTION", "completed": "", "percent": 0,
+      "priority": 1, "due": "@TODAY@", "start": "", "rrule": "", "repeatFrom": "due", "categories": ["work"], "parent": "",
+      "created": "2026-01-01T09:00", "updated": "2026-01-01T09:00" },
+    { "uid": "T-2", "listId": "list-inbox", "title": "Outline", "status": "NEEDS-ACTION", "completed": "", "percent": 0,
+      "priority": 0, "due": "", "start": "", "rrule": "", "repeatFrom": "due", "categories": [], "parent": "T-1",
+      "created": "2026-01-01T09:00", "updated": "2026-01-01T09:00" },
+    { "uid": "T-3", "listId": "list-inbox", "title": "Someday", "status": "NEEDS-ACTION", "completed": "", "percent": 0,
+      "priority": 0, "due": "", "start": "", "rrule": "", "repeatFrom": "due", "categories": [], "parent": "",
+      "created": "2026-01-01T09:00", "updated": "2026-01-01T09:00" }
+  ],
+  "prefs": {}
+}

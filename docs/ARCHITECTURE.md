@@ -1,7 +1,7 @@
 # Architecture
 
-Carts is two programs that share one data folder, one store and one sync
-helper:
+Cart's Tasks and Calendar is two programs that share one data folder, two stores (calendar and
+tasks) and two sync helpers:
 
 - the **bar plugin** (`carterra3.carts`: `manifest.json`, `Service.qml`,
   `BarWidget.qml`, `Panel.qml`), which runs inside Omarchy's shell and
@@ -10,8 +10,10 @@ helper:
   Quickshell process with its own window class (`org.omarchy.carts`), so
   Hyprland tiles it like any other application.
 
-Both load `Store.qml`, the views, the pure-JS logic (`Events.js`, `Recur.js`,
-`Tz.js`, `Contacts.js`, `Palette.js`, `Model.js`) and talk to `sync/`.
+Both load `Store.qml` (calendars, accounts, address books) and
+`TaskStore.qml` (task lists, tasks), the views, the pure-JS logic
+(`Events.js`, `Recur.js`, `Tz.js`, `Contacts.js`, `Palette.js`, `Model.js`,
+`Tasks.js`) and talk to `sync/`.
 
 ## Decisions
 
@@ -44,13 +46,43 @@ Both load `Store.qml`, the views, the pure-JS logic (`Events.js`, `Recur.js`,
   sync does not rewrite (and re-index) the big event cache. Feeds are fetched
   four at a time.
 
+- **One account list.** Accounts live in calendar.json and serve calendars,
+  address books and task lists alike, with one keyring entry each
+  (`account:<id>`). `TaskStore` reads them from `Store` and asks it to add
+  one (`ensureAccount`) or let one go (`releaseAccount`, which only removes an
+  account nothing uses; `Store` reads tasks.json to see which accounts task
+  lists use, so the plugin never drops an account the app's lists need).
+- **Tasks on the calendar are stand-ins.** `Tasks.calendarItems` turns dated
+  tasks into event-shaped records (`taskRef: "listId|uid"`) in pseudo
+  calendars `tasks:<listId>`; `TaskBridge` feeds them to a Store's
+  `taskEvents`/`taskCalendars`, which merges them into the day index. Every
+  view draws them with no special code; the window and the popup route
+  clicks (`taskRef`) to the task editor and drags (`Store.moveEvent` →
+  `taskHandler.moveTask`) to a new due date. The app and the plugin each
+  decide whether to fill them (two settings).
+- **Recurrence of tasks lives in JS only** (`Tasks.advance`): completing a
+  repeating task moves the record to its next date (the Apple Reminders /
+  tasks.org / Thunderbird model) and leaves a completed copy as history. The
+  helper only reads and writes fields.
+- **Optimistic task writes.** An edit to a synced task shows at once
+  (`TaskStore.pending`) and stays until the helper's cache file is read back;
+  a refusal rolls it back with a message. Undo covers complete, reopen, skip,
+  move and delete.
+
 ## Data flow
 
 ```
- Store.qml ──writes──▶ calendar.json ◀──reads── sync/calsync.py ──writes──▶ remote.json
+ Store.qml ──writes──▶ calendar.json ◀──reads── sync/calsync.py ──writes──▶ remote.json, contacts.json
      ▲   └──── runs one helper job at a time (JSON on stdin/stdout) ────┘        │
      └──────────────────────────── watches ─────────────────────────────────────┘
+
+ TaskStore.qml ──writes──▶ tasks.json ◀──reads── sync/tasksync.py ──writes──▶ tasks-remote.json
+     ▲     (accounts: calendar.json, read by both)  ┘                            │
+     └──────────────────────────── watches ─────────────────────────────────────┘
 ```
+
+On first start both stores run `sync/importer.py` before reading their files;
+it copies data from the older standalone Calendar and Tasks apps once.
 
 Secrets never pass through argv or the JSON files: the store hands them to
 the helper on stdin and the helper keeps them in the desktop keyring

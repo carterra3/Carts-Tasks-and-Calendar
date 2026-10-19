@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Sync helper for Carts, the Omarchy calendar plugin and app (standard library only).
+"""Sync helper for Cart's Tasks and Calendar (calendars, ICS links, address books; (standard library only).
 
 The plugin owns calendar.json (calendars, accounts, local events). This
 helper only *reads* it, and is the only writer of remote.json, the cache of
@@ -33,10 +33,8 @@ Commands (input, when any, is one JSON line on stdin; output is one JSON line):
 
 from __future__ import annotations
 
-import base64
 import concurrent.futures
 import fcntl
-import ipaddress
 import json
 import os
 import subprocess
@@ -52,7 +50,13 @@ import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import dav  # noqa: E402
 import ical  # noqa: E402
+# HTTP plumbing and its hardening (https only, no credentials across sites on
+# redirects, capped reads, hrefs kept inside their collection) live in dav.py,
+# shared with tasksync.py.
+from dav import (Failure, LOCAL_HOSTS, MAX_BYTES, MAX_ERROR_BYTES, PUBLIC_SUFFIXES, TIMEOUT, UA,  # noqa: E402,F401
+                 _is_ip, _read_capped, _redirect_ok, check_url as _check_url, decode as _decode, http, owned as _owned)
 import series  # noqa: E402
 import tzdata  # noqa: E402
 import vcard  # noqa: E402
@@ -69,22 +73,6 @@ CONTACTS_JSON = os.path.join(DATA_DIR, "contacts.json")
 PARALLEL = 4
 LOCK = os.path.join(DATA_DIR, ".sync.lock")
 SERVICE = "carts"
-UA = "Carts/0.5 (+https://omarchy.org)"
-TIMEOUT = 25
-MAX_BYTES = 20 * 1024 * 1024      # largest response we will read
-MAX_ERROR_BYTES = 64 * 1024
-LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
-# Registrable suffixes with two labels: a host's parent must not be one of
-# these, or "a.co.uk" would vouch for every other "*.co.uk" site.
-PUBLIC_SUFFIXES = {
-    "co.uk", "org.uk", "ac.uk", "gov.uk", "me.uk", "ltd.uk", "plc.uk", "net.uk",
-    "com.au", "net.au", "org.au", "edu.au", "gov.au", "co.nz", "org.nz", "net.nz",
-    "co.jp", "ne.jp", "or.jp", "ac.jp", "co.kr", "or.kr", "com.br", "net.br", "org.br",
-    "com.cn", "net.cn", "org.cn", "com.tw", "com.hk", "com.sg", "com.my", "co.in", "net.in",
-    "org.in", "co.za", "org.za", "com.mx", "com.ar", "com.tr", "co.il", "com.pl", "co.id",
-    "github.io", "gitlab.io", "netlify.app", "vercel.app", "pages.dev", "herokuapp.com",
-    "appspot.com", "blogspot.com", "cloudfront.net", "azurewebsites.net", "duckdns.org",
-}
 PAST_DAYS = 120
 FUTURE_DAYS = 400
 
@@ -101,10 +89,6 @@ CARD_PROVIDERS = {
     "icloud": "https://contacts.icloud.com/",
     "fastmail": "https://carddav.fastmail.com/",
 }
-
-
-class Failure(Exception):
-    pass
 
 
 # --------------------------------------------------------------------------
@@ -144,132 +128,6 @@ def secret_clear(key: str):
 # --------------------------------------------------------------------------
 # HTTP
 # --------------------------------------------------------------------------
-
-def _check_url(url):
-    """https anywhere; plain http only to this machine (local test servers)."""
-    parts = urllib.parse.urlsplit(url)
-    scheme, host = parts.scheme.lower(), (parts.hostname or "").lower()
-    if not host:
-        raise Failure("That address has no server name")
-    if scheme == "https" or (scheme == "http" and host in LOCAL_HOSTS):
-        return url
-    if scheme == "http":
-        raise Failure("Only https:// addresses are allowed (http would send your data unencrypted)")
-    raise Failure(f"Unsupported address type {scheme or '(none)'}://")
-
-
-def _redirect_ok(orig, nxt, with_auth):
-    """May a request (carrying credentials if with_auth) follow orig -> nxt?"""
-    a, b = urllib.parse.urlsplit(orig), urllib.parse.urlsplit(nxt)
-    try:
-        _check_url(nxt)
-    except Failure:
-        return False
-    if a.scheme.lower() == "https" and b.scheme.lower() != "https":
-        return False
-    if not with_auth:
-        return True
-    ha, hb = (a.hostname or "").lower(), (b.hostname or "").lower()
-    if ha == hb:
-        return True
-    if _is_ip(ha) or _is_ip(hb):
-        return False
-    # A sibling or child of the original host: caldav.icloud.com may hand
-    # off to p52-caldav.icloud.com. The parent must be a real domain, not a
-    # public suffix, and the match is on a label boundary.
-    labels = ha.split(".")
-    parent = ".".join(labels[1:]) if len(labels) >= 3 else ha
-    if parent.count(".") < 1 or parent in PUBLIC_SUFFIXES:
-        return hb.endswith("." + ha)
-    return hb == parent or hb.endswith("." + parent)
-
-
-def _is_ip(host):
-    try:
-        ipaddress.ip_address(host)
-        return True
-    except ValueError:
-        return False
-
-
-def _owned(cal_url, href):
-    """Is href an object inside the calendar collection at cal_url?"""
-    if not href:
-        return False
-    c, h = urllib.parse.urlsplit(cal_url), urllib.parse.urlsplit(href)
-    if (c.scheme.lower(), (c.hostname or "").lower(), c.port) != (h.scheme.lower(), (h.hostname or "").lower(), h.port):
-        return False
-    base = c.path if c.path.endswith("/") else c.path + "/"
-    path, base = urllib.parse.unquote(h.path), urllib.parse.unquote(base)
-    # Dot segments anywhere ("/cal/..", "/cal/./x/..") could resolve outside.
-    if any(seg in (".", "..") for seg in path.split("/")):
-        return False
-    return path.startswith(base) and len(path) > len(base)
-
-
-def _read_capped(fp, limit):
-    chunks, total = [], 0
-    while True:
-        chunk = fp.read(65536)
-        if not chunk:
-            return b"".join(chunks)
-        total += len(chunk)
-        if total > limit:
-            raise Failure(f"Server sent more than {limit // (1024 * 1024) or 1} MB; refusing to read it")
-        chunks.append(chunk)
-
-class _NoRedirect(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, *args, **kwargs):
-        return None
-
-
-_opener = urllib.request.build_opener(_NoRedirect)
-
-
-def http(method, url, body=None, headers=None, auth=None, redirects=5):
-    hdrs = {"User-Agent": UA}
-    hdrs.update(headers or {})
-    if auth:
-        token = base64.b64encode(f"{auth[0]}:{auth[1]}".encode()).decode()
-        hdrs["Authorization"] = "Basic " + token
-    data = body.encode("utf-8") if isinstance(body, str) else body
-    _check_url(url)
-    for _ in range(redirects + 1):
-        req = urllib.request.Request(url, data=data, method=method, headers=hdrs)
-        try:
-            with _opener.open(req, timeout=TIMEOUT) as resp:
-                return resp.status, dict(resp.headers), _read_capped(resp, MAX_BYTES)
-        except urllib.error.HTTPError as e:
-            if e.code in (301, 302, 303, 307, 308) and e.headers.get("Location"):
-                nxt = urllib.parse.urljoin(url, e.headers["Location"])
-                if not _redirect_ok(url, nxt, bool(auth)):
-                    if auth:
-                        raise Failure("Server redirected to another site; refusing to send the password there")
-                    raise Failure("Server redirected to an address that is not https; refusing to follow")
-                if e.code == 303:
-                    method, data = "GET", None
-                url = nxt
-                continue
-            try:
-                err_body = _read_capped(e, MAX_ERROR_BYTES) if e.fp else b""
-            except Failure:
-                err_body = b""
-            return e.code, dict(e.headers or {}), err_body
-        except urllib.error.URLError as e:
-            raise Failure(f"Could not reach {urllib.parse.urlsplit(url).hostname}: {e.reason}")
-        except TimeoutError:
-            raise Failure(f"Timed out talking to {urllib.parse.urlsplit(url).hostname}")
-    raise Failure("Too many redirects")
-
-
-def _decode(body: bytes) -> str:
-    for enc in ("utf-8", "latin-1"):
-        try:
-            return body.decode(enc)
-        except UnicodeDecodeError:
-            continue
-    return body.decode("utf-8", "replace")
-
 
 # --------------------------------------------------------------------------
 # Config
@@ -922,7 +780,7 @@ def contacts_discover(inp):
                                inp.get("username", ""), inp["password"])
         if inp.get("accountId"):
             secret_set("account:" + inp["accountId"], inp["password"],
-                       f"Carts: {inp.get('username', '')} (contacts)")
+                       f"Cart's Tasks and Calendar: {inp.get('username', '')} (contacts)")
         return {"books": books}
     cfg = load_config()
     acc = account_by_id(cfg, inp.get("accountId"))
@@ -1131,12 +989,12 @@ def main(argv):
             cals = discover(inp.get("provider", "caldav"), inp.get("server", ""), inp.get("username", ""), inp.get("password", ""))
             if inp.get("accountId"):
                 secret_set("account:" + inp["accountId"], inp.get("password", ""),
-                           f"Carts: {inp.get('username', '')} ({inp.get('provider', 'caldav')})")
+                           f"Cart's Tasks and Calendar: {inp.get('username', '')} ({inp.get('provider', 'caldav')})")
             out = {"ok": True, "calendars": cals,
                    "server": (inp.get("server") or PROVIDERS.get(inp.get("provider"), ""))}
         elif cmd == "set-secret":
             inp = read_input()
-            secret_set(inp["key"], inp["value"], inp.get("label") or "Carts")
+            secret_set(inp["key"], inp["value"], inp.get("label") or "Cart's Tasks and Calendar")
             out = {"ok": True}
         elif cmd == "forget":
             inp = read_input()

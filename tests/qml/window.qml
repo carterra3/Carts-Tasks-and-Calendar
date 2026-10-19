@@ -38,7 +38,13 @@ ShellRoot {
   Timer {
     id: ticker
     interval: 900; repeat: true; running: store.ready
+    // After a long frame (the year view builds twelve months at once) the
+    // timer fires again right away; keep a full interval between steps so
+    // the keys of the last step have been handled.
+    property real last: 0
     onTriggered: {
+      if (Date.now() - last < 850) return
+      last = Date.now()
       var s = h.step++
       if (s === 0) {
         win.present("2026-10-20", "month")

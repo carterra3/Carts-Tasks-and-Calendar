@@ -15,6 +15,7 @@ Scope {
   property var manifest: null
 
   readonly property alias store: store
+  readonly property alias taskStore: taskStore
 
   // The bar widget that hosts the popout, and its settings (clock format,
   // week start), handed over by the widget itself.
@@ -38,12 +39,28 @@ Scope {
   function closeWindow() { Quickshell.execDetached([root.launcherPath, "--quit"]) }
   function toggleWindow() { Quickshell.execDetached([root.launcherPath, "--toggle"]) }
   function newEventWindow() { Quickshell.execDetached([root.launcherPath, "--new"]) }
+  function openTasksWindow() { Quickshell.execDetached([root.launcherPath, "--tasks", "today"]) }
+  function newTaskWindow() { Quickshell.execDetached([root.launcherPath, "--new-task"]) }
+  function openTask(key) { Quickshell.execDetached([root.launcherPath, "--task", key]) }
 
   function popout(method) {
     if (root.popoutHost && typeof root.popoutHost[method] === "function") root.popoutHost[method]()
   }
 
-  Store { id: store }
+  Store {
+    id: store
+    taskEvents: bridge.items.events
+    taskCalendars: bridge.items.calendars
+    taskHandler: bridge
+  }
+  TaskStore { id: taskStore; calendarStore: store }
+  // Tasks on the popup's views (Settings → "Tasks in the bar popup" →
+  // "Day list + calendar"). The day list itself is PopupTasks in Panel.
+  TaskBridge {
+    id: bridge
+    taskStore: taskStore
+    enabled: store.pref("popupTasks", "list") === "calendar"
+  }
 
   IpcHandler {
     target: "carterra3.carts"
@@ -61,8 +78,10 @@ Scope {
     function connectAccount(): void { root.popout("connectAccount") }
     function cycleView(): void { root.popout("cycleView") }
     function cycleSize(): void { root.popout("cycleSize") }
-    function sync(): void { store.syncAll() }
+    function sync(): void { store.syncAll(); taskStore.syncAll() }
     function openWindow(): void { root.openWindow() }
+    function openTasks(): void { root.openTasksWindow() }
+    function newTaskWindow(): void { root.newTaskWindow() }
     function closeWindow(): void { root.closeWindow() }
     function toggleWindow(): void { root.toggleWindow() }
     function newEventWindow(): void { root.newEventWindow() }
@@ -73,7 +92,7 @@ Scope {
   readonly property string desktopPath: Quickshell.env("HOME") + "/.local/share/applications/carts.desktop"
   readonly property string desktopEntry: "[Desktop Entry]\n"
     + "Type=Application\n"
-    + "Name=Carts\n"
+    + "Name=Cart's Tasks and Calendar\n"
     + "GenericName=Calendar and Tasks\n"
     + "Comment=Calendar, tasks and contacts for Omarchy\n"
     + "Exec=\"" + root.launcherPath + "\"\n"
