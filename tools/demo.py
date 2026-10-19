@@ -29,8 +29,6 @@ import urllib.request
 from datetime import date, timedelta
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-APP = os.path.join(REPO, "CalendarApp.qml")
-SHELL = os.path.join(os.environ.get("OMARCHY_PATH", "/usr/share/omarchy"), "shell")
 USER, PASSWORD = "demo", "demo-pass"
 SECRET_KEY = "account:acc-demo"
 
@@ -205,13 +203,13 @@ def main():
     ap.add_argument("--keep", action="store_true", help="keep the demo folder")
     args = ap.parse_args()
 
-    if subprocess.run(["quickshell", "list", "-p", APP], capture_output=True, text=True).stdout.count("Instance"):
+    # bin/carts builds the app's config folder (links to the repo and
+    # Omarchy's Commons/Ui) and prints where it is.
+    app = os.path.join(subprocess.run([os.path.join(REPO, "bin", "carts"), "--config-dir"], capture_output=True,
+                                      text=True, check=True).stdout.strip(), "CalendarApp.qml")
+    if subprocess.run(["quickshell", "list", "-p", app], capture_output=True, text=True).stdout.count("Instance"):
         print("The app is running; quit it first: carts --quit", file=sys.stderr)
         return 1
-    for m in ("Commons", "Ui"):
-        link = os.path.join(REPO, m)
-        if not os.path.islink(link):
-            os.symlink(os.path.join(SHELL, m), link)
 
     root = tempfile.mkdtemp(prefix="carts-demo-")
     data = os.path.join(root, "data", "carts")
@@ -228,7 +226,7 @@ def main():
             json.dump(tasks_json(), f, indent=2)
         env = dict(os.environ, XDG_DATA_HOME=os.path.join(root, "data"), CARTS_NO_IMPORT="1", QS_APP_ID="org.omarchy.carts")
         print("Demo data in", root, "- close the window to end the demo", flush=True)
-        subprocess.run(["quickshell", "-n", "-p", APP], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(["quickshell", "-n", "-p", app], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except KeyboardInterrupt:
         pass
     finally:

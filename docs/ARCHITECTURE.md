@@ -19,10 +19,12 @@ Both load `Store.qml` (calendars, accounts, address books) and
 
 - **Standalone Quickshell, not GTK.** The app reuses the plugin's views and
   Omarchy's `qs.Ui` components, so it looks and behaves like the shell.
-  Quickshell only resolves modules inside the config folder, so the app's
-  root file lives at the repo root and `bin/carts` creates gitignored
-  `Commons`/`Ui` symlinks to `$OMARCHY_PATH/shell/`. The root needs
-  `//@ pragma OmarchyLoadPatch`, or a bare `Color` resolves to Qt's own type.
+  Quickshell only resolves modules inside the config folder, so `bin/carts`
+  runs the app from `~/.cache/carts/app`, a folder of links to the repo's
+  files and to `$OMARCHY_PATH/shell/{Commons,Ui}` (the plugin folder itself
+  must stay free of symlinks for `omarchy plugin add/update`). The root
+  needs `//@ pragma OmarchyLoadPatch`, or a bare `Color` resolves to Qt's
+  own type.
 - **The app quits when its window closes.** The plugin keeps syncing in the
   background. Theme changes are only pushed to the shell over IPC, so the app
   watches `theme.name` and reloads `Color` itself.

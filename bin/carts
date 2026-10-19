@@ -18,20 +18,31 @@
 set -euo pipefail
 
 here=$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)
-config="$here/CalendarApp.qml"
 shell_dir="${OMARCHY_PATH:-/usr/share/omarchy}/shell"
 
-# The views import Omarchy's qs.Commons / qs.Ui, which must sit inside the
-# config folder. Link them (gitignored), repairing stale links after moves.
-for m in Commons Ui; do
-  if [[ "$(readlink "$here/$m" 2>/dev/null)" != "$shell_dir/$m" ]]; then
-    [[ -e "$here/$m" && ! -L "$here/$m" ]] && { echo "carts: $here/$m is not a symlink; refusing to replace it" >&2; exit 1; }
-    ln -sfn "$shell_dir/$m" "$here/$m"
-  fi
-done
+# The app runs from its own config folder of links to the repo's QML/JS and
+# sync/, plus Omarchy's qs.Commons / qs.Ui (Quickshell only finds modules
+# inside the config folder). Keeping those links out of the repo keeps the
+# plugin folder free of symlinks, which `omarchy plugin add/update` refuse.
+app_dir="${XDG_CACHE_HOME:-$HOME/.cache}/carts/app"
+config="$app_dir/CalendarApp.qml"
 
 ipc() { quickshell ipc -p "$config" call carts "$@" >/dev/null 2>&1; }
 running() { quickshell list -p "$config" 2>/dev/null | grep -q 'Instance'; }
+
+build_app_dir() {
+  mkdir -p "$app_dir"
+  find "$app_dir" -maxdepth 1 -type l -delete
+  local f
+  for f in "$here"/*.qml "$here"/*.js; do ln -s "$f" "$app_dir/"; done
+  ln -s "$here/sync" "$app_dir/sync"
+  ln -s "$shell_dir/Commons" "$app_dir/Commons"
+  ln -s "$shell_dir/Ui" "$app_dir/Ui"
+}
+# Links left in the repo by older versions.
+for m in Commons Ui; do [[ -L $here/$m ]] && rm -f -- "$here/$m"; done
+# Rebuilt only while the app is not running (a change would hot-reload it).
+running || build_app_dir
 
 # The same entry the bar plugin writes (Service.qml), so the two agree.
 install_app() {
@@ -60,6 +71,7 @@ install_app() {
 mode=open
 case "${1:-}" in
   --install) install_app; exit 0 ;;
+  --config-dir) echo "$app_dir"; exit 0 ;;
   --new) mode=new; shift ;;
   --contacts) mode=contacts; shift ;;
   --tasks) mode=tasks; shift ;;
